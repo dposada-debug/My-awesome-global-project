@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Releases — My Awesome Global Project</title>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root {
+      --bg: #0d1117;
+      --surface: #161b22;
+      --border: #30363d;
+      --text: #e6edf3;
+      --text-muted: #8b949e;
+      --accent: #58a6ff;
+      --accent-hover: #79b8ff;
+      --heading: #f0f6fc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans', Helvetica, Arial, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+    .layout {
+      display: grid;
+      grid-template-columns: 240px 1fr;
+      min-height: 100vh;
+    }
+    @media (max-width: 768px) {
+      .layout { grid-template-columns: 1fr; }
+    }
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 1.5rem 0;
+    }
+    .brand {
+      padding: 0 1.25rem 1rem;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1rem;
+    }
+    .brand h1 {
+      margin: 0;
+      font-size: 1rem;
+      font-weight: 600;
+      color: var(--heading);
+    }
+    .brand p {
+      margin: 0.25rem 0 0;
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+    .releases-list {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .releases-list li { margin: 0; }
+    .releases-list a {
+      display: block;
+      padding: 0.5rem 1.25rem;
+      color: var(--text);
+      text-decoration: none;
+      font-size: 0.9375rem;
+      border-left: 3px solid transparent;
+    }
+    .releases-list a:hover {
+      background: rgba(255,255,255,0.04);
+      color: var(--accent);
+    }
+    .releases-list a.active {
+      background: rgba(88, 166, 255, 0.08);
+      color: var(--accent);
+      border-left-color: var(--accent);
+    }
+    .loading-releases, .error-releases {
+      padding: 0 1.25rem;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+    .error-releases { color: #f85149; }
+    main {
+      padding: 2rem 2.5rem 3rem;
+      max-width: 48rem;
+    }
+    .release-content {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 2rem;
+    }
+    .release-content h1 { margin-top: 0; color: var(--heading); font-size: 1.5rem; }
+    .release-content h2 { color: var(--heading); font-size: 1.125rem; margin: 1.5rem 0 0.5rem; }
+    .release-content h3 { font-size: 1rem; margin: 1rem 0 0.25rem; }
+    .release-content p { margin: 0.5rem 0; }
+    .release-content ul, .release-content ol { margin: 0.5rem 0; padding-left: 1.5rem; }
+    .release-content li { margin: 0.25rem 0; }
+    .release-content strong { color: var(--heading); }
+    .release-content a { color: var(--accent); text-decoration: none; }
+    .release-content a:hover { text-decoration: underline; }
+    .release-content hr { border: none; border-top: 1px solid var(--border); margin: 1rem 0; }
+    .placeholder {
+      color: var(--text-muted);
+      font-size: 0.9375rem;
+      padding: 2rem;
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: 8px;
+      background: var(--surface);
+    }
+    .loading-content {
+      color: var(--text-muted);
+      padding: 2rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="layout">
+    <aside>
+      <div class="brand">
+        <h1>My Awesome Global Project</h1>
+        <p>Release notes</p>
+      </div>
+      <div id="releases-container">
+        <p class="loading-releases" id="releases-loading">Loading releases…</p>
+        <ul class="releases-list" id="releases-list" hidden></ul>
+        <p class="error-releases" id="releases-error" hidden></p>
+      </div>
+    </aside>
+    <main>
+      <div id="content-area">
+        <div class="placeholder" id="placeholder">Select a release from the list.</div>
+        <div class="release-content" id="release-content" hidden></div>
+        <div class="loading-content" id="content-loading" hidden>Loading…</div>
+      </div>
+    </main>
+  </div>
+  <script>
+    (function () {
+      const REPO_OWNER = 'REPO_OWNER';  // set when opening as file; auto on GitHub Pages
+      const REPO_NAME = 'My-awesome-global-project';
+      const REPO_BRANCH = 'main';
+      const RELEASES_FALLBACK = ['v1.0.11.md'];  // used if API fails
+
+      function getRepoConfig() {
+        const host = window.location.hostname;
+        const path = window.location.pathname.replace(/\/$/, '') || '/';
+        const pathParts = path.split('/').filter(Boolean);
+        if (host.includes('github.io') && pathParts.length >= 1) {
+          return {
+            owner: host.split('.')[0],
+            repo: pathParts[0],
+            branch: REPO_BRANCH
+          };
+        }
+        return { owner: REPO_OWNER, repo: REPO_NAME, branch: REPO_BRANCH };
+      }
+
+      const config = getRepoConfig();
+      const apiBase = `https://api.github.com/repos/${config.owner}/${config.repo}/contents/releases`;
+      const rawBase = `https://raw.githubusercontent.com/${config.owner}/${config.repo}/${config.branch}/releases`;
+
+      const releasesListEl = document.getElementById('releases-list');
+      const releasesLoadingEl = document.getElementById('releases-loading');
+      const releasesErrorEl = document.getElementById('releases-error');
+      const placeholderEl = document.getElementById('placeholder');
+      const releaseContentEl = document.getElementById('release-content');
+      const contentLoadingEl = document.getElementById('content-loading');
+
+      function show(el) { el.hidden = false; }
+      function hide(el) { el.hidden = true; }
+
+      function loadReleases() {
+        fetch(apiBase)
+          .then(function (res) {
+            if (!res.ok) throw new Error('Could not load releases list');
+            return res.json();
+          })
+          .then(function (files) {
+            const mdFiles = (files || [])
+              .filter(function (f) { return f.name && f.name.endsWith('.md'); })
+              .map(function (f) { return f.name; })
+              .sort()
+              .reverse();
+            hide(releasesLoadingEl);
+            hide(releasesErrorEl);
+            if (mdFiles.length === 0) {
+              releasesErrorEl.textContent = 'No release markdown files found.';
+              show(releasesErrorEl);
+              return;
+            }
+            releasesListEl.innerHTML = mdFiles.map(function (name) {
+              const label = name.replace(/\.md$/i, '');
+              return '<li><a href="#" data-release="' + escapeHtml(name) + '">' + escapeHtml(label) + '</a></li>';
+            }).join('');
+            show(releasesListEl);
+            releasesListEl.querySelector('a').classList.add('active');
+            loadRelease(mdFiles[0]);
+          })
+          .catch(function (err) {
+            hide(releasesLoadingEl);
+            const sorted = RELEASES_FALLBACK.slice().sort().reverse();
+            if (sorted.length > 0) {
+              releasesListEl.innerHTML = sorted.map(function (name) {
+                const label = name.replace(/\.md$/i, '');
+                return '<li><a href="#" data-release="' + escapeHtml(name) + '">' + escapeHtml(label) + '</a></li>';
+              }).join('');
+              show(releasesListEl);
+              releasesListEl.querySelector('a').classList.add('active');
+              loadRelease(sorted[0]);
+              releasesErrorEl.textContent = 'List from cache. ' + (err.message || '');
+              show(releasesErrorEl);
+            } else {
+              releasesErrorEl.textContent = err.message || 'Failed to load releases.';
+              show(releasesErrorEl);
+            }
+          });
+      }
+
+      function escapeHtml(s) {
+        const div = document.createElement('div');
+        div.textContent = s;
+        return div.innerHTML;
+      }
+
+      function loadRelease(filename) {
+        show(contentLoadingEl);
+        hide(placeholderEl);
+        hide(releaseContentEl);
+        document.querySelectorAll('.releases-list a').forEach(function (a) {
+          a.classList.toggle('active', a.getAttribute('data-release') === filename);
+        });
+        const url = rawBase + '/' + encodeURIComponent(filename);
+        fetch(url)
+          .then(function (res) {
+            if (!res.ok) throw new Error('Release not found');
+            return res.text();
+          })
+          .then(function (md) {
+            releaseContentEl.innerHTML = marked.parse(md);
+            hide(contentLoadingEl);
+            show(releaseContentEl);
+          })
+          .catch(function () {
+            hide(contentLoadingEl);
+            show(placeholderEl);
+            placeholderEl.textContent = 'Could not load this release.';
+          });
+      }
+
+      releasesListEl.addEventListener('click', function (e) {
+        const a = e.target.closest('a[data-release]');
+        if (!a) return;
+        e.preventDefault();
+        loadRelease(a.getAttribute('data-release'));
+      });
+
+      loadReleases();
+    })();
+  </script>
+</body>
+</html>
